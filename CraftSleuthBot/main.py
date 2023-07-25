@@ -1,6 +1,7 @@
 import os
 import sys
 import praw  # type: ignore
+import time
 import utils
 import traceback
 import datetime as dt
@@ -143,20 +144,21 @@ def main() -> int:
 
     saved_submission_ids = [row.post_id for row in posts.fetch_all()]
     for submission in reddit.subreddit(handler['sub_name']).new():
-        method = remove_method(submission)
-        if method is None and submission.author.name is not None:
-            original_post = Row(
-                username=submission.author.name,
-                title=submission.title,
-                text=submission.selftext,
-                post_id=submission.id,
-                deletion_method=Datatype.NULL,
-                post_last_edit=Datatype.NULL,
-                record_created=str(dt.datetime.now()),
-                record_edited=str(dt.datetime.now()),
-            )
-            if original_post.post_id not in saved_submission_ids:
+        if submission.id not in saved_submission_ids:
+            method = remove_method(submission)
+            if method is None and submission.author.name is not None:
+                original_post = Row(
+                    username=submission.author.name,
+                    title=submission.title,
+                    text=submission.selftext,
+                    post_id=submission.id,
+                    deletion_method=Datatype.NULL,
+                    post_last_edit=Datatype.NULL,
+                    record_created=str(dt.datetime.now()),
+                    record_edited=str(dt.datetime.now()),
+                )
                 posts.save(original_post)
+
         elif method is not None:
             original_post = Row(
                 username='uknown',
@@ -171,6 +173,7 @@ def main() -> int:
             posts.save(original_post)
             msg = modmail_removal_notification(original_post, method)
             send_modmail(msg)
+        time.sleep(utils.MSG_THRESHOLD)
 
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
@@ -194,6 +197,7 @@ def main() -> int:
             stored_post.post_last_edit = submission.selftext
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
+        time.sleep(utils.MSG_THRESHOLD)
 
     return 0
 
