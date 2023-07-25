@@ -43,7 +43,7 @@ def send_modmail(msg: str) -> None:
     print(msg)
 
 
-def notify_error(func: Callable[..., int]) -> Callable[..., int]:
+def notify_if_error(func: Callable[..., int]) -> Callable[..., int]:
     def wrapper(*args: Any, **kwargs: Any) -> int:
         try:
             return func(*args, **kwargs)
@@ -115,7 +115,17 @@ def get_command_line_args(args: List[str]) -> None:
             logger.info(help_msg)
 
 
-@notify_error
+def modmail_removal_notification(submission: Row, method: str) -> str:
+    return f"""A post has been removed
+OP: {submission.username}
+Title: {submission.title}
+Post ID: reddit.com/{submission.post_id}
+Deleted by: {method}
+Date created: {submission.record_created}
+Date found: {submission.record_edited}"""
+
+
+@notify_if_error
 def main() -> int:
     get_command_line_args(sys.argv)
     handler = config_app(config_file)
@@ -147,6 +157,20 @@ def main() -> int:
             )
             if original_post.post_id not in saved_submission_ids:
                 posts.save(original_post)
+        elif method is not None:
+            original_post = Row(
+                username='uknown',
+                title=submission.title,
+                text='N/A',
+                post_id=submission.id,
+                deletion_method=Datatype.NULL,
+                post_last_edit=Datatype.NULL,
+                record_created=str(dt.datetime.now()),
+                record_edited=str(dt.datetime.now()),
+            )
+            posts.save(original_post)
+            msg = modmail_removal_notification(original_post, method)
+            send_modmail(msg)
 
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
@@ -161,15 +185,7 @@ def main() -> int:
             stored_post.deletion_method = method
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
-            msg = f"""A post has been removed
-OP: {stored_post.username}
-Title: {stored_post.title}
-Post ID: reddit.com/{stored_post.post_id}
-Deleted by: {method}
-Date created: {stored_post.record_created}
-Date found: {stored_post.record_edited}
-"""
-
+            msg = modmail_removal_notification(stored_post, method)
             send_modmail(msg)
 
         if submission.selftext != stored_post.text\
