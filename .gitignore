@@ -1,0 +1,5 @@
+config.json
+notes.txt
+__pycache__/
+.post.sqlite
+.venv
