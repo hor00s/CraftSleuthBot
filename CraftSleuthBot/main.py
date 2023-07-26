@@ -168,8 +168,8 @@ def main() -> int:
     saved_submission_ids = {row.post_id for row in posts.fetch_all()}
     for submission in reddit.subreddit(handler['sub_name']).new():
         flair = get_flair(submission.link_flair_text)
+        method = remove_method(submission)
         if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
-            method = remove_method(submission)
             if method is None and submission.author.name is not None:
                 original_post = Row(
                     username=submission.author.name,
