@@ -160,11 +160,6 @@ def main() -> int:
                 msg = utils.modmail_removal_notification(original_post, method)
                 send_modmail(msg)
                 time.sleep(utils.MSG_AWAIT_THRESHOLD)
-        elif user_is_deleted(submission) and submission.id in saved_submission_ids:
-            send_modmail(
-                utils.modmail_removal_notification(submission, 'Account has been removed')
-            )
-            time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
@@ -177,7 +172,11 @@ def main() -> int:
 
         submission = reddit.submission(id=stored_post.post_id)
         method = remove_method(submission)
-        if method is not None and not stored_post.deletion_method:
+        if user_is_deleted(submission):
+            send_modmail(
+                utils.modmail_removal_notification(submission, 'Account has been deleted')
+            )
+        elif method is not None and not stored_post.deletion_method:
             stored_post.deletion_method = method
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
