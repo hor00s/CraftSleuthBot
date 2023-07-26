@@ -1,9 +1,17 @@
 certifi==2023.7.22
 charset-normalizer==3.2.0
+flake8==6.0.0
 idna==3.4
+mccabe==0.7.0
+mypy==1.4.1
+mypy-extensions==1.0.0
 praw==7.7.1
 prawcore==2.3.0
+pycodestyle==2.10.0
+pyflakes==3.0.1
 requests==2.31.0
+tomli==2.0.1
+typing_extensions==4.7.1
 update-checker==0.18.0
 urllib3==2.0.4
 websocket-client==1.6.1
