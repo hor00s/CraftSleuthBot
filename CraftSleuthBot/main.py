@@ -11,7 +11,9 @@ from jsonwrapper import AutoSaveDict
 from typing import (
     Optional,
     Callable,
+    Tuple,
     List,
+    Set,
     Any,
 )
 from bot import (
@@ -23,6 +25,14 @@ from bot import (
 config_file = Path(utils.BASE_DIR, 'config.json')
 posts = Posts('post', utils.BASE_DIR)
 logger = Logger(1)
+untracked_flairs = (utils.Flair.SOLVED, utils.Flair.ABANDONED)
+
+
+def get_flair(flair: str) -> utils.Flair:
+    try:
+        return utils.Flair(flair)
+    except ValueError:
+        return utils.Flair('Uknown')
 
 
 def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
@@ -48,9 +58,14 @@ def notify_if_error(func: Callable[..., int]) -> Callable[..., int]:
     def wrapper(*args: Any, **kwargs: Any) -> int:
         try:
             return func(*args, **kwargs)
-        except:  # noqa
+        except KeyboardInterrupt:
+            logger.debug("\nProgram interrupted by user")
+            return 0
+        except:
+            author = 'https://www.reddit.com/user/kaerfkeerg'
             full_error = traceback.format_exc()
-            msg = f"Error with '{utils.BOT_NAME}':\n\n{full_error}\n\nPlease report to author"
+            bot_name = utils.BOT_NAME
+            msg = f"Error with '{bot_name}':\n\n{full_error}\n\nPlease report to author ({author})"
             send_modmail(msg)
             return 1
     return wrapper
@@ -126,6 +141,14 @@ Date created: {submission.record_created}
 Date found: {submission.record_edited}"""
 
 
+def should_be_tracked(
+        flair: utils.Flair,
+        submission: praw.reddit.Submission,
+        stored_submissions_ids: Set[praw.reddit.Submission],
+        untracked_flairs: Tuple[utils.Flair, ...]) -> bool:
+    return submission.id not in stored_submissions_ids and flair not in untracked_flairs
+
+
 @notify_if_error
 def main() -> int:
     get_command_line_args(sys.argv)
@@ -142,9 +165,10 @@ def main() -> int:
 
     posts.init()
 
-    saved_submission_ids = [row.post_id for row in posts.fetch_all()]
+    saved_submission_ids = {row.post_id for row in posts.fetch_all()}
     for submission in reddit.subreddit(handler['sub_name']).new():
-        if submission.id not in saved_submission_ids:
+        flair = get_flair(submission.link_flair_text)
+        if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
             method = remove_method(submission)
             if method is None and submission.author.name is not None:
                 original_post = Row(
@@ -173,12 +197,14 @@ def main() -> int:
             posts.save(original_post)
             msg = modmail_removal_notification(original_post, method)
             send_modmail(msg)
-        time.sleep(utils.MSG_THRESHOLD)
+            time.sleep(utils.MSG_THRESHOLD)
 
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
         created = utils.string_to_dt(stored_post.record_created).date()
-        if utils.submission_is_older(created, max_days):
+        flair = get_flair(submission.link_flair_text)
+
+        if utils.submission_is_older(created, max_days) or flair in untracked_flairs:
             posts.delete(id=stored_post.id)
             continue
 
@@ -190,6 +216,7 @@ def main() -> int:
             posts.edit(stored_post)
             msg = modmail_removal_notification(stored_post, method)
             send_modmail(msg)
+            time.sleep(utils.MSG_THRESHOLD)
 
         if submission.selftext != stored_post.text\
             or submission.selftext != stored_post.post_last_edit\
@@ -197,7 +224,6 @@ def main() -> int:
             stored_post.post_last_edit = submission.selftext
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
-        time.sleep(utils.MSG_THRESHOLD)
 
     return 0
 
