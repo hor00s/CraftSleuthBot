@@ -73,6 +73,7 @@ def config_app(path: Path) -> AutoSaveDict:
         'password': '',
         'sub_name': '',
         'max_days': '',
+        'max_posts': '',
     }
 
     configuration = []
@@ -101,6 +102,10 @@ def should_be_tracked(
     return submission.id not in stored_submissions_ids and flair not in untracked_flairs
 
 
+def user_is_deleted(submission: praw.reddit.Submission) -> bool:
+    return submission.author is None
+
+
 @notify_if_error
 def main() -> int:
     if utils.parse_cmd_line_args(sys.argv, logger, config_file, posts):
@@ -120,15 +125,31 @@ def main() -> int:
     posts.init()
 
     saved_submission_ids = {row.post_id for row in posts.fetch_all()}
-    for submission in reddit.subreddit(handler['sub_name']).new(limit=20):
+    max_posts = handler['max_posts']
+    limit = int(max_posts) if max_posts else None
+    for submission in reddit.subreddit(handler['sub_name']).new(limit=limit):
         flair = utils.get_flair(submission.link_flair_text)
         method = remove_method(submission)
-        if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
-            if method is None and submission.author.name is not None:
+        if not user_is_deleted(submission):
+            if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
+                if method is None and submission.author.name is not None:
+                    original_post = Row(
+                        username=submission.author.name,
+                        title=submission.title,
+                        text=submission.selftext,
+                        post_id=submission.id,
+                        deletion_method=Datatype.NULL,
+                        post_last_edit=Datatype.NULL,
+                        record_created=str(dt.datetime.now()),
+                        record_edited=str(dt.datetime.now()),
+                    )
+                    posts.save(original_post)
+
+            elif method is not None:
                 original_post = Row(
-                    username=submission.author.name,
+                    username='uknown',
                     title=submission.title,
-                    text=submission.selftext,
+                    text='N/A',
                     post_id=submission.id,
                     deletion_method=Datatype.NULL,
                     post_last_edit=Datatype.NULL,
@@ -136,21 +157,13 @@ def main() -> int:
                     record_edited=str(dt.datetime.now()),
                 )
                 posts.save(original_post)
-
-        elif method is not None:
-            original_post = Row(
-                username='uknown',
-                title=submission.title,
-                text='N/A',
-                post_id=submission.id,
-                deletion_method=Datatype.NULL,
-                post_last_edit=Datatype.NULL,
-                record_created=str(dt.datetime.now()),
-                record_edited=str(dt.datetime.now()),
+                msg = utils.modmail_removal_notification(original_post, method)
+                send_modmail(msg)
+                time.sleep(utils.MSG_AWAIT_THRESHOLD)
+        elif user_is_deleted(submission):
+            send_modmail(
+                utils.modmail_removal_notification(submission, 'Account has been removed')
             )
-            posts.save(original_post)
-            msg = utils.modmail_removal_notification(original_post, method)
-            send_modmail(msg)
             time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
     for stored_post in posts.fetch_all():
