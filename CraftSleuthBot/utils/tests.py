@@ -1,6 +1,8 @@
 import unittest
 import datetime as dt
 from .actions import (
+    Flair,
+    get_flair,
     string_to_dt,
     submission_is_older,
 )
@@ -12,6 +14,16 @@ class TestActions(unittest.TestCase):
 
     def tearDown(self) -> None:
         return super().tearDown()
+
+    def test_get_flair(self) -> None:
+        solved = get_flair("Solved")
+        self.assertEqual(solved, Flair.SOLVED)
+        abandoned = get_flair('Abandoned')
+        self.assertEqual(abandoned, Flair.ABANDONED)
+        uknown = get_flair('Uknown')
+        self.assertEqual(uknown, Flair.Uknown)
+        uknown = get_flair('fsdafsd')
+        self.assertEqual(uknown, Flair.Uknown)
 
     def test_string_to_dt(self) -> None:
         datetime = dt.datetime.now()

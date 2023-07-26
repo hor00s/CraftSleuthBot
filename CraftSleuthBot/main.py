@@ -1,3 +1,4 @@
+# mypy: disable-error-code=attr-defined
 import os
 import sys
 import praw  # type: ignore
@@ -12,7 +13,6 @@ from typing import (
     Optional,
     Callable,
     Tuple,
-    List,
     Set,
     Any,
 )
@@ -26,13 +26,6 @@ config_file = Path(utils.BASE_DIR, 'config.json')
 posts = Posts('post', utils.BASE_DIR)
 logger = Logger(1)
 untracked_flairs = (utils.Flair.SOLVED, utils.Flair.ABANDONED)
-
-
-def get_flair(flair: str) -> utils.Flair:
-    try:
-        return utils.Flair(flair)
-    except ValueError:
-        return utils.Flair('Uknown')
 
 
 def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
@@ -100,47 +93,6 @@ def config_app(path: Path) -> AutoSaveDict:
     return config_handler
 
 
-def get_command_line_args(args: List[str]) -> None:
-    help_msg = """Command line help prompt
-    Command: help
-    Args: []
-    Decription: Prints the help prompt
-
-    Command: reset_config
-    Args: []
-    Decription: Reset the bot credentials
-
-    Command: reset_db
-    Args: []
-    Decription: Reset the database
-"""
-    if len(args) > 1:
-        if args[1] == 'help':
-            logger.info(help_msg)
-        elif args[1] == 'reset_config':
-            try:
-                os.remove(config_file)
-            except FileNotFoundError:
-                logger.error("No configuration file found")
-        elif args[1] == 'reset_db':
-            try:
-                os.remove(posts.path)
-            except FileNotFoundError:
-                logger.error("No database found")
-        else:
-            logger.info(help_msg)
-
-
-def modmail_removal_notification(submission: Row, method: str) -> str:
-    return f"""A post has been removed
-OP: {submission.username}
-Title: {submission.title}
-Post ID: reddit.com/{submission.post_id}
-Deleted by: {method}
-Date created: {submission.record_created}
-Date found: {submission.record_edited}"""
-
-
 def should_be_tracked(
         flair: utils.Flair,
         submission: praw.reddit.Submission,
@@ -151,7 +103,9 @@ def should_be_tracked(
 
 @notify_if_error
 def main() -> int:
-    get_command_line_args(sys.argv)
+    if utils.parse_cmd_line_args(sys.argv, logger, config_file, posts):
+        return 0
+
     handler = config_app(config_file)
     handler.init()
 
@@ -166,8 +120,8 @@ def main() -> int:
     posts.init()
 
     saved_submission_ids = {row.post_id for row in posts.fetch_all()}
-    for submission in reddit.subreddit(handler['sub_name']).new():
-        flair = get_flair(submission.link_flair_text)
+    for submission in reddit.subreddit(handler['sub_name']).new(limit=20):
+        flair = utils.get_flair(submission.link_flair_text)
         method = remove_method(submission)
         if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
             if method is None and submission.author.name is not None:
@@ -195,14 +149,14 @@ def main() -> int:
                 record_edited=str(dt.datetime.now()),
             )
             posts.save(original_post)
-            msg = modmail_removal_notification(original_post, method)
+            msg = utils.modmail_removal_notification(original_post, method)
             send_modmail(msg)
-            time.sleep(utils.MSG_THRESHOLD)
+            time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
         created = utils.string_to_dt(stored_post.record_created).date()
-        flair = get_flair(submission.link_flair_text)
+        flair = utils.get_flair(submission.link_flair_text)
 
         if utils.submission_is_older(created, max_days) or flair in untracked_flairs:
             posts.delete(id=stored_post.id)
@@ -214,9 +168,9 @@ def main() -> int:
             stored_post.deletion_method = method
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
-            msg = modmail_removal_notification(stored_post, method)
+            msg = utils.modmail_removal_notification(stored_post, method)
             send_modmail(msg)
-            time.sleep(utils.MSG_THRESHOLD)
+            time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
         if submission.selftext != stored_post.text\
             or submission.selftext != stored_post.post_last_edit\

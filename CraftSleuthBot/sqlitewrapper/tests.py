@@ -1,3 +1,4 @@
+# mypy: disable-error-code=attr-defined
 import unittest
 import os
 from pathlib import Path

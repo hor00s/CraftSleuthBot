@@ -1,3 +1,4 @@
+# mypy: disable-error-code=attr-defined
 from __future__ import annotations
 from pathlib import Path
 from sqlite3 import (
