@@ -160,7 +160,7 @@ def main() -> int:
                 msg = utils.modmail_removal_notification(original_post, method)
                 send_modmail(msg)
                 time.sleep(utils.MSG_AWAIT_THRESHOLD)
-        elif user_is_deleted(submission):
+        elif user_is_deleted(submission) and submission.id in saved_submission_ids:
             send_modmail(
                 utils.modmail_removal_notification(submission, 'Account has been removed')
             )
