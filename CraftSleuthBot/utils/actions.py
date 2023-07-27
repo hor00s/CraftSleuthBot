@@ -34,11 +34,17 @@ def get_flair(flair: str) -> Flair:
 
 def modmail_removal_notification(submission: Row, method: str) -> str:
     return f"""A post has been removed
+
 OP: {submission.username}
+
 Title: {submission.title}
+
 Post ID: https://reddit.com/{submission.post_id}
+
 Deleted by: {method}
+
 Date created: {submission.record_created}
+
 Date found: {submission.record_edited}"""
 
 
