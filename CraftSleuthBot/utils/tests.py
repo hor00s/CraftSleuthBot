@@ -21,9 +21,9 @@ class TestActions(unittest.TestCase):
         abandoned = get_flair('Abandoned')
         self.assertEqual(abandoned, Flair.ABANDONED)
         uknown = get_flair('Uknown')
-        self.assertEqual(uknown, Flair.Uknown)
+        self.assertEqual(uknown, Flair.UKNOWN)
         uknown = get_flair('fsdafsd')
-        self.assertEqual(uknown, Flair.Uknown)
+        self.assertEqual(uknown, Flair.UKNOWN)
 
     def test_string_to_dt(self) -> None:
         datetime = dt.datetime.now()

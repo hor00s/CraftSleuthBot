@@ -108,6 +108,8 @@ def user_is_deleted(submission: praw.reddit.Submission) -> bool:
 
 @notify_if_error
 def main() -> int:
+    posts_to_delete: Set[Row] = set()
+
     if utils.parse_cmd_line_args(sys.argv, logger, config_file, posts):
         return 0
 
@@ -147,7 +149,7 @@ def main() -> int:
 
             elif method is not None:
                 original_post = Row(
-                    username='uknown',
+                    username='Uknown',
                     title=submission.title,
                     text='N/A',
                     post_id=submission.id,
@@ -167,30 +169,38 @@ def main() -> int:
         flair = utils.get_flair(submission.link_flair_text)
 
         if utils.submission_is_older(created, max_days) or flair in untracked_flairs:
-            posts.delete(id=stored_post.id)
+            posts_to_delete.add(stored_post)
             continue
 
         submission = reddit.submission(id=stored_post.post_id)
         method = remove_method(submission)
         if user_is_deleted(submission):
             send_modmail(
-                utils.modmail_removal_notification(submission, 'Account has been deleted')
+                utils.modmail_removal_notification(stored_post, 'Account has been deleted')
             )
+            posts_to_delete.add(stored_post)
+
         elif method is not None and not stored_post.deletion_method:
             stored_post.deletion_method = method
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
             msg = utils.modmail_removal_notification(stored_post, method)
             send_modmail(msg)
+            posts_to_delete.add(stored_post)
             time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
         if submission.selftext != stored_post.text\
             or submission.selftext != stored_post.post_last_edit\
-                and not remove_method(submission):
+                and not stored_post.deletion_method:
             stored_post.post_last_edit = submission.selftext
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
 
+    for row in posts_to_delete:
+        posts.delete(post_id=row.post_id)
+
+    logger.info("Program finished successfully")
+    logger.info(f"Total posts deleted: {len(posts_to_delete)}")
     return 0
 
 
