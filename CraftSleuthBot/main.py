@@ -13,6 +13,7 @@ from typing import (
     Optional,
     Callable,
     Tuple,
+    List,
     Set,
     Any,
 )
@@ -22,10 +23,51 @@ from bot import (
     Row,
 )
 
+
+def config_app(path: Path) -> AutoSaveDict:
+    config = {
+        'client_id': '',
+        'client_secret': '',
+        'user_agent': '',
+        'username': '',
+        'password': '',
+        'sub_name': '',
+        'max_days': '',
+        'max_posts': '',
+    }
+
+    configuration: List[List[str]] = []
+
+    if not os.path.exists(path):
+        for key, _ in config.items():
+            config_name = ' '.join(key.split('_')).title()
+            user_inp = input(f"{config_name}: ")
+            configuration.append([key, user_inp])
+
+    for config_name, value in configuration:
+        config[config_name] = value
+
+    config_handler = AutoSaveDict(
+        path,
+        **config
+    )
+    return config_handler
+
+
 config_file = Path(utils.BASE_DIR, 'config.json')
+handler = config_app(config_file)
+handler.init()
 posts = Posts('post', utils.BASE_DIR)
 logger = Logger(1)
 untracked_flairs = (utils.Flair.SOLVED, utils.Flair.ABANDONED)
+posts.init()
+reddit = praw.Reddit(
+    client_id=handler['client_id'],
+    client_secret=handler['client_secret'],
+    user_agent=handler['user_agent'],
+    username=handler['username'],
+    password=handler['password'],
+)
 
 
 def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
@@ -42,8 +84,9 @@ def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
     return None
 
 
-def send_modmail(msg: str) -> None:
+def send_modmail(reddit: praw.Reddit, subreddit: str, subject: str, msg: str) -> None:
     print("Sending modmail...")
+    reddit.subreddit(subreddit).message(subject, msg)
     print(msg)
 
 
@@ -59,39 +102,14 @@ def notify_if_error(func: Callable[..., int]) -> Callable[..., int]:
             full_error = traceback.format_exc()
             bot_name = utils.BOT_NAME
             msg = f"Error with '{bot_name}':\n\n{full_error}\n\nPlease report to author ({author})"
-            send_modmail(msg)
+            send_modmail(
+                reddit,
+                handler['sub_name'],
+                f'An error has occured with {utils.BOT_NAME} msg',
+                msg
+            )
             return 1
     return wrapper
-
-
-def config_app(path: Path) -> AutoSaveDict:
-    config = {
-        'client_id': '',
-        'client_secret': '',
-        'user_agent': '',
-        'username': '',
-        'password': '',
-        'sub_name': '',
-        'max_days': '',
-        'max_posts': '',
-    }
-
-    configuration = []
-    if not os.path.exists(path):
-        send_modmail(f"{utils.BOT_NAME} needs configuration!")
-        for key, _ in config.items():
-            config_name = ' '.join(key.split('_')).title()
-            user_inp = input(f"{config_name}: ")
-            configuration.append([key, user_inp])
-
-    for config_name, value in configuration:
-        config[config_name] = value
-
-    config_handler = AutoSaveDict(
-        path,
-        **config
-    )
-    return config_handler
 
 
 def should_be_tracked(
@@ -112,19 +130,6 @@ def main() -> int:
 
     if utils.parse_cmd_line_args(sys.argv, logger, config_file, posts):
         return 0
-
-    handler = config_app(config_file)
-    handler.init()
-
-    reddit = praw.Reddit(
-        client_id=handler['client_id'],
-        client_secret=handler['client_secret'],
-        user_agent=handler['user_agent'],
-        username=handler['username'],
-        password=handler['password'],
-    )
-
-    posts.init()
 
     saved_submission_ids = {row.post_id for row in posts.fetch_all()}
     max_posts = handler['max_posts']
@@ -147,22 +152,6 @@ def main() -> int:
                     )
                     posts.save(original_post)
 
-            elif method is not None:
-                original_post = Row(
-                    username='Uknown',
-                    title=submission.title,
-                    text='N/A',
-                    post_id=submission.id,
-                    deletion_method=Datatype.NULL,
-                    post_last_edit=Datatype.NULL,
-                    record_created=str(dt.datetime.now()),
-                    record_edited=str(dt.datetime.now()),
-                )
-                posts.save(original_post)
-                msg = utils.modmail_removal_notification(original_post, method)
-                send_modmail(msg)
-                time.sleep(utils.MSG_AWAIT_THRESHOLD)
-
     for stored_post in posts.fetch_all():
         max_days = int(handler['max_days'])
         created = utils.string_to_dt(stored_post.record_created).date()
@@ -176,6 +165,9 @@ def main() -> int:
         method = remove_method(submission)
         if user_is_deleted(submission):
             send_modmail(
+                reddit,
+                handler['sub_name'],
+                "User's account has been deleted",
                 utils.modmail_removal_notification(stored_post, 'Account has been deleted')
             )
             posts_to_delete.add(stored_post)
@@ -185,7 +177,12 @@ def main() -> int:
             stored_post.record_edited = str(dt.datetime.now())
             posts.edit(stored_post)
             msg = utils.modmail_removal_notification(stored_post, method)
-            send_modmail(msg)
+            send_modmail(
+                reddit,
+                handler['sub_name'],
+                'A post has been deleted',
+                msg
+            )
             posts_to_delete.add(stored_post)
             time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
@@ -199,6 +196,7 @@ def main() -> int:
     for row in posts_to_delete:
         posts.delete(post_id=row.post_id)
 
+    posts_to_delete.clear()
     logger.info("Program finished successfully")
     logger.info(f"Total posts deleted: {len(posts_to_delete)}")
     return 0
