@@ -87,7 +87,7 @@ def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
 
 def send_modmail(reddit: praw.Reddit, subreddit: str, subject: str, msg: str) -> None:
     print("Sending modmail...")
-    # reddit.subreddit(subreddit).message(subject, msg)
+    reddit.subreddit(subreddit).message(subject, msg)
     print(msg)
 
 
