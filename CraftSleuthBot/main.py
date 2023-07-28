@@ -162,46 +162,49 @@ def main() -> int:
             check_submission(submission, saved_submission_ids)
 
     for stored_post in posts.fetch_all():
-        submission = reddit.submission(id=stored_post.post_id)
-        max_days = int(handler['max_days'])
-        created = utils.string_to_dt(stored_post.record_created).date()
-        flair = utils.get_flair(submission.link_flair_text)
+        try:
+            submission = reddit.submission(id=stored_post.post_id)
+            max_days = int(handler['max_days'])
+            created = utils.string_to_dt(stored_post.record_created).date()
+            flair = utils.get_flair(submission.link_flair_text)
 
-        if utils.submission_is_older(created, max_days) or flair in untracked_flairs:
-            posts_to_delete.add(stored_post)
-            continue
+            if utils.submission_is_older(created, max_days) or flair in untracked_flairs:
+                posts_to_delete.add(stored_post)
+                continue
 
-        submission = reddit.submission(id=stored_post.post_id)
-        method = remove_method(submission)
-        if user_is_deleted(submission):
-            send_modmail(
-                reddit,
-                handler['sub_name'],
-                "User's account has been deleted",
-                utils.modmail_removal_notification(stored_post, 'Account has been deleted')
-            )
-            posts_to_delete.add(stored_post)
+            submission = reddit.submission(id=stored_post.post_id)
+            method = remove_method(submission)
+            if user_is_deleted(submission):
+                send_modmail(
+                    reddit,
+                    handler['sub_name'],
+                    "User's account has been deleted",
+                    utils.modmail_removal_notification(stored_post, 'Account has been deleted')
+                )
+                posts_to_delete.add(stored_post)
 
-        elif method is not None and not stored_post.deletion_method:
-            stored_post.deletion_method = method
-            stored_post.record_edited = str(dt.datetime.now())
-            posts.edit(stored_post)
-            msg = utils.modmail_removal_notification(stored_post, method)
-            send_modmail(
-                reddit,
-                handler['sub_name'],
-                'A post has been deleted',
-                msg
-            )
-            posts_to_delete.add(stored_post)
-            time.sleep(utils.MSG_AWAIT_THRESHOLD)
+            elif method is not None and not stored_post.deletion_method:
+                stored_post.deletion_method = method
+                stored_post.record_edited = str(dt.datetime.now())
+                posts.edit(stored_post)
+                msg = utils.modmail_removal_notification(stored_post, method)
+                send_modmail(
+                    reddit,
+                    handler['sub_name'],
+                    'A post has been deleted',
+                    msg
+                )
+                posts_to_delete.add(stored_post)
+                time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
-        if submission.selftext != stored_post.text\
-            or submission.selftext != stored_post.post_last_edit\
-                and not stored_post.deletion_method:
-            stored_post.post_last_edit = submission.selftext
-            stored_post.record_edited = str(dt.datetime.now())
-            posts.edit(stored_post)
+            if submission.selftext != stored_post.text\
+                or submission.selftext != stored_post.post_last_edit\
+                    and not stored_post.deletion_method:
+                stored_post.post_last_edit = submission.selftext
+                stored_post.record_edited = str(dt.datetime.now())
+                posts.edit(stored_post)
+        except prawcore.exceptions.TooManyRequests:
+            time.sleep(60)
 
     for row in posts_to_delete:
         posts.delete(post_id=row.post_id)
