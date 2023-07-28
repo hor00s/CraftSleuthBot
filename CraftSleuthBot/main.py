@@ -4,6 +4,7 @@ import sys
 import praw  # type: ignore
 import time
 import utils
+import prawcore  # type: ignore
 import traceback
 import datetime as dt
 from pathlib import Path
@@ -86,7 +87,7 @@ def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
 
 def send_modmail(reddit: praw.Reddit, subreddit: str, subject: str, msg: str) -> None:
     print("Sending modmail...")
-    reddit.subreddit(subreddit).message(subject, msg)
+    # reddit.subreddit(subreddit).message(subject, msg)
     print(msg)
 
 
@@ -114,14 +115,31 @@ def notify_if_error(func: Callable[..., int]) -> Callable[..., int]:
 
 def should_be_tracked(
         flair: utils.Flair,
-        submission: praw.reddit.Submission,
-        stored_submissions_ids: Set[praw.reddit.Submission],
         untracked_flairs: Tuple[utils.Flair, ...]) -> bool:
-    return submission.id not in stored_submissions_ids and flair not in untracked_flairs
+    return flair not in untracked_flairs
 
 
 def user_is_deleted(submission: praw.reddit.Submission) -> bool:
     return submission.author is None
+
+
+def check_submission(submission: praw.reddit.Submission, saved_submission_ids: Set[Row]) -> None:
+    if not user_is_deleted(submission) and submission.id not in saved_submission_ids:
+        flair = utils.get_flair(submission.link_flair_text)
+        method = remove_method(submission)
+        if should_be_tracked(flair, untracked_flairs):
+            if method is None and submission.author is not None:
+                original_post = Row(
+                    username=submission.author.name,
+                    title=submission.title,
+                    text=submission.selftext,
+                    post_id=submission.id,
+                    deletion_method=Datatype.NULL,
+                    post_last_edit=Datatype.NULL,
+                    record_created=str(dt.datetime.now()),
+                    record_edited=str(dt.datetime.now()),
+                )
+                posts.save(original_post)
 
 
 @notify_if_error
@@ -134,25 +152,17 @@ def main() -> int:
     saved_submission_ids = {row.post_id for row in posts.fetch_all()}
     max_posts = handler['max_posts']
     limit = int(max_posts) if max_posts else None
-    for submission in reddit.subreddit(handler['sub_name']).new(limit=limit):
-        flair = utils.get_flair(submission.link_flair_text)
-        method = remove_method(submission)
-        if not user_is_deleted(submission):
-            if should_be_tracked(flair, submission, saved_submission_ids, untracked_flairs):
-                if method is None and submission.author.name is not None:
-                    original_post = Row(
-                        username=submission.author.name,
-                        title=submission.title,
-                        text=submission.selftext,
-                        post_id=submission.id,
-                        deletion_method=Datatype.NULL,
-                        post_last_edit=Datatype.NULL,
-                        record_created=str(dt.datetime.now()),
-                        record_edited=str(dt.datetime.now()),
-                    )
-                    posts.save(original_post)
+    sub_name = handler['sub_name']
+
+    for submission in reddit.subreddit(sub_name).new(limit=limit):
+        try:
+            check_submission(submission, saved_submission_ids)
+        except prawcore.exceptions.TooManyRequests:
+            time.sleep(60)
+            check_submission(submission, saved_submission_ids)
 
     for stored_post in posts.fetch_all():
+        submission = reddit.submission(id=stored_post.post_id)
         max_days = int(handler['max_days'])
         created = utils.string_to_dt(stored_post.record_created).date()
         flair = utils.get_flair(submission.link_flair_text)
