@@ -74,8 +74,10 @@ reddit = praw.Reddit(
 def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
     removed = submission.removed_by_category
     if removed is not None:
-        if removed in ('author', 'moderator'):
-            method = 'Removed by moderator'
+        # if removed in ('author', 'moderator'):
+        #     method = 'Removed by moderator'
+        if removed in ('author',):
+            method = 'Removed by author'
         elif removed in ('deleted',):
             method = 'Deleted by user'
         else:
