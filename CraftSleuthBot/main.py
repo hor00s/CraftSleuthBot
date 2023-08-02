@@ -77,7 +77,9 @@ def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
         # if removed in ('author', 'moderator'):
         #     method = 'Removed by moderator'
         if removed in ('author',):
-            method = 'Removed by author'
+            method = 'Deleted by OP'
+        elif removed in ('moderator',):
+            method = 'removed by mod'
         elif removed in ('deleted',):
             method = 'Deleted by user'
         else:
@@ -177,12 +179,13 @@ def main() -> int:
             submission = reddit.submission(id=stored_post.post_id)
             method = remove_method(submission)
             if user_is_deleted(submission):
-                send_modmail(
-                    reddit,
-                    handler['sub_name'],
-                    "User's account has been deleted",
-                    utils.modmail_removal_notification(stored_post, 'Account has been deleted')
-                )
+                if method != 'removed by mod':
+                    send_modmail(
+                        reddit,
+                        handler['sub_name'],
+                        "User's account has been deleted",
+                        utils.modmail_removal_notification(stored_post, 'Account has been deleted')
+                    )
                 posts_to_delete.add(stored_post)
 
             elif method is not None and not stored_post.deletion_method:
