@@ -79,7 +79,7 @@ def remove_method(submission: praw.reddit.Submission) -> Optional[str]:
         if removed in ('author',):
             method = 'Deleted by OP'
         elif removed in ('moderator',):
-            method = 'removed by mod'
+            method = 'Removed by mod'
         elif removed in ('deleted',):
             method = 'Deleted by user'
         else:
@@ -149,6 +149,7 @@ def check_submission(submission: praw.reddit.Submission, saved_submission_ids: S
 @notify_if_error
 def main() -> int:
     posts_to_delete: Set[Row] = set()
+    ignore_methods = ['Removed by mod',]
 
     if utils.parse_cmd_line_args(sys.argv, logger, config_file, posts):
         return 0
@@ -179,7 +180,7 @@ def main() -> int:
             submission = reddit.submission(id=stored_post.post_id)
             method = remove_method(submission)
             if user_is_deleted(submission):
-                if method != 'removed by mod':
+                if method not in ignore_methods:
                     send_modmail(
                         reddit,
                         handler['sub_name'],
@@ -189,16 +190,17 @@ def main() -> int:
                 posts_to_delete.add(stored_post)
 
             elif method is not None and not stored_post.deletion_method:
-                stored_post.deletion_method = method
-                stored_post.record_edited = str(dt.datetime.now())
-                posts.edit(stored_post)
-                msg = utils.modmail_removal_notification(stored_post, method)
-                send_modmail(
-                    reddit,
-                    handler['sub_name'],
-                    'A post has been deleted',
-                    msg
-                )
+                if method not in ignore_methods:
+                    stored_post.deletion_method = method
+                    stored_post.record_edited = str(dt.datetime.now())
+                    posts.edit(stored_post)
+                    msg = utils.modmail_removal_notification(stored_post, method)
+                    send_modmail(
+                        reddit,
+                        handler['sub_name'],
+                        'A post has been deleted',
+                        msg
+                    )
                 posts_to_delete.add(stored_post)
                 time.sleep(utils.MSG_AWAIT_THRESHOLD)
 
